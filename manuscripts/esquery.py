@@ -60,8 +60,7 @@ class ElasticQuery():
                 {
                   "match": {
                     "%s": {
-                      "query": "%s",
-                      "type": "phrase"
+                      "query": "%s"
                     }
                   }
                 }
@@ -189,6 +188,22 @@ class ElasticQuery():
           "aggs": {
             "%i": {
               "avg": {
+                "field": "%s"
+              }
+            }
+          }
+        """ % (agg_id, field)
+
+        return query_agg
+
+    @classmethod
+    def __get_query_agg_sum(cls, field, agg_id=None):
+        if not agg_id:
+            agg_id = cls.AGGREGATION_ID
+        query_agg = """
+          "aggs": {
+            "%i": {
+              "sum": {
                 "field": "%s"
               }
             }
@@ -354,6 +369,8 @@ class ElasticQuery():
                 query_agg = ElasticQuery.__get_query_agg_percentiles(field)
             elif agg_type == "avg":
                 query_agg = ElasticQuery.__get_query_agg_avg(field)
+            elif agg_type == "sum":
+                query_agg = ElasticQuery.__get_query_agg_sum(field)
             else:
                 raise RuntimeError("Aggregation of %s not supported" % agg_type)
         else:
@@ -363,7 +380,7 @@ class ElasticQuery():
                                                         agg_type=agg_type,
                                                         offset=offset)
 
-        if agg_type not in ['percentiles', 'terms', 'avg']:
+        if agg_type not in ['percentiles', 'terms', 'avg', 'sum']:
             field_agg = A(agg_type, field=field,
                           precision_threshold=cls.ES_PRECISION)
         else:
