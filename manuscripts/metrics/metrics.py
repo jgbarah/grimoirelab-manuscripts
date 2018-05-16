@@ -23,6 +23,7 @@
 #   Daniel Izquierdo-Cortazar <dizquierdo@bitergia.com>
 #   Alvaro del Castillo <acs@bitergia.com>
 
+
 import logging
 
 import requests
@@ -58,6 +59,7 @@ class Metrics(object):
     interval = '1M'  # interval to be used in all metrics
     offset = None  # offset to be used in date histogram in all metrics
     es_headers = {'Content-Type': 'application/json'}
+    FIELD_LIST = None
 
     def __init__(self, es_url, es_index, start=None, end=None, esfilters={},
                  interval=None, offset=None):
@@ -217,3 +219,11 @@ class Metrics(object):
             trend_percentage = int((trend / last) * 100)
 
         return (last, trend_percentage)
+
+    def get_query_source(self, size):
+        query = ElasticQuery.get_query_source(date_field=self.FIELD_DATE,
+                                            start=self.start, end=self.end,
+                                            filters=self.esfilters,
+                                            field_list=self.FIELD_LIST,
+                                            size=size)
+        return query

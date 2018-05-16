@@ -134,6 +134,33 @@ class ElasticQuery():
         return query_basic
 
     @classmethod
+    def __get_query_simple(cls, date_field=None, start=None, end=None,
+                          filters=None):
+        if not date_field:
+            query_range = ''
+        else:
+            query_range = cls.__get_query_range(date_field, start, end)
+            if query_range:
+                query_range = query_range
+
+        query_filters = cls.__get_query_filters(filters)
+        if query_filters:
+            query_filters =  query_filters
+
+        query_source = """
+          "query": {
+            "bool": {
+              "must": [
+                %s,
+                %s
+              ]
+            }
+          }
+        """ % (query_range, query_filters)
+
+        return query_source
+
+    @classmethod
     def __get_query_agg_terms(cls, field):
         query_agg = """
           "aggs": {
@@ -414,3 +441,20 @@ class ElasticQuery():
             return json.dumps(s.to_dict())
         else:
             return query
+
+    @classmethod
+    def get_query_source(cls, date_field=None, start=None, end=None,
+                         filters=None, field_list=None, size=None):
+
+        query = cls.__get_query_simple(date_field=date_field, start=start,
+                                       end=end, filters=filters)
+
+        query_source = """
+                    {
+                        "_source": %s,
+                        %s,
+                        "from": 0,
+                        "size": %s
+                    } """ % (json.dumps(field_list), query, size)
+
+        return query_source
