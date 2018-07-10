@@ -20,17 +20,47 @@
 # Authors:
 #     Pranjal Aswani <aswani.pranjal@gmail.com>
 
+import os
 import sys
+import json
 import unittest
 
 from datetime import datetime, timezone
 
+from elasticsearch import Elasticsearch
 from elasticsearch_dsl import A
+
+from grimoire_elk.elk import feed_backend, enrich_backend
+
 # Hack to make sure that tests import the right packages
 # due to setuptools behaviour
 sys.path.insert(0, '..')
 
-from manuscripts2.new_functions import Query, Index
+from manuscripts2.new_functions import (Query,
+                                        Index,
+                                        get_aggs)
+
+# We are going to insert perceval's data into elasticsearch
+# So that we can test the the functions
+ES_URL = "http://127.0.0.1:9200"
+INDEX_NAME = "perceval_github_test"
+REPOSITORY = "https://github.com/chaoss/grimoirelab-perceval"
+GIT_ENRICH_INDEX = "perceval_git_test"
+GIT_RAW_INDEX = "perceval_git_test_raw"
+BACKEND = "git"
+BACKEND_PARAMS = [REPOSITORY]
+
+# Some aggregation results as seen on 10th July 2018
+NUM_COMMITS = 1208
+NUM_AUTHORS = 19
+FETCH_AGGREGATION_RESULTS_DATA1 = "data/num_hash_by_authors.json"
+FETCH_SOURCE_RESULTS_DATA1 = "data/authors.json"
+
+
+def load_json_file(filename, mode="r"):
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), filename), mode) as f:
+        json_content = json.load(f)
+    return json_content
 
 
 class TestNewFunctions(unittest.TestCase):
@@ -38,23 +68,50 @@ class TestNewFunctions(unittest.TestCase):
 
     maxDiff = None
 
+    @classmethod
+    def setUpClass(cls):
+
+        cls.es = Elasticsearch(hosts=ES_URL)
+
+        try:
+            cls.es.indices.delete(index=GIT_ENRICH_INDEX)
+            cls.es.indices.delete(index=GIT_RAW_INDEX)
+        except Exception as e:
+            print("Index doesn't exist")
+
+        feed_backend(ES_URL, clean=True, fetch_archive=False, backend_name=BACKEND,
+                     backend_params=BACKEND_PARAMS, es_index=GIT_RAW_INDEX,
+                     es_index_enrich=GIT_ENRICH_INDEX, project=None, arthur=False)
+
+        enrich_backend(ES_URL, clean=True, backend_name=BACKEND,
+                       backend_params=BACKEND_PARAMS,
+                       ocean_index=GIT_RAW_INDEX,
+                       ocean_index_enrich=GIT_ENRICH_INDEX,
+                       unaffiliated_group=None)
+
     def setUp(self):
         """Set up the necessary functions to run unittests"""
 
-        self.github_data_source = "perceval_github"
-
-        self.github_index = Index(index_name=self.github_data_source)
+        self.es = Elasticsearch(ES_URL)
+        self.github_index = Index(index_name=GIT_ENRICH_INDEX,
+                                  es=self.es)
 
         self.Query_test_object = Query(self.github_index)
 
-        self.field = "AGG_FIELD"  # field to aggregate
+        self.field1 = "hash"  # field to aggregate
+        self.field2 = "time_to_commit_hours"
+        self.field3 = "author_name"
         self.date_field = "DATE_FIELD"  # field for range
-        self.filters = [{"name1": "value1"}, {"name2": "value2"}]
+        # Using sample filters not related to the GIT_INDEX
+        self.filters = [{"item_type": "pull_request"}, {"item_type": "issue"}]
         self.offset = 2
         self.interval = "month"
         self.timezone = "UTC"
-        self.start = datetime(2016, 1, 1)  # from date
-        self.end = datetime(2018, 1, 1)  # to date
+        self.start = datetime(2015, 1, 1)  # from date
+
+        # Make sure to change the CONSTANTS defined above if you change
+        # the end date here before testing because tests might fail otherwise
+        self.end = datetime(2018, 7, 10)  # to date
         self.size = 10000
         self.precision_threshold = 3000
 
@@ -76,7 +133,7 @@ class TestNewFunctions(unittest.TestCase):
         # Add the query
         self.Query_test_object.add_query(self.filters[0])
         # check whether the query was inserted into the Search object or not
-        self.assertDictEqual(self.Query_test_object.search.query.to_dict()['match'], {'name1': 'value1'})
+        self.assertDictEqual(self.Query_test_object.search.query.to_dict()['match'], {'item_type': 'pull_request'})
 
     def test_add_inverse_query(self):
         """
@@ -86,14 +143,14 @@ class TestNewFunctions(unittest.TestCase):
         self.Query_test_object.add_inverse_query(self.filters[1])
         # check whether the query was inserted into the Search object or not
         self.assertDictEqual(self.Query_test_object.search.query.to_dict()['bool']['must_not'][0],
-                             {'match': {'name2': 'value2'}})
+                             {'match': {'item_type': 'issue'}})
 
     def test_get_sum(self):
         """
         Test the sum aggregation
         """
 
-        field = self.field
+        field = self.field1
         # without field param
         with self.assertRaises(AttributeError):
             self.Query_test_object.get_sum()
@@ -110,7 +167,7 @@ class TestNewFunctions(unittest.TestCase):
         Test the average aggregation
         """
 
-        field = self.field
+        field = self.field1
         # without field param
         with self.assertRaises(AttributeError):
             self.Query_test_object.get_average()
@@ -127,7 +184,7 @@ class TestNewFunctions(unittest.TestCase):
         Test the percentiles aggregation
         """
 
-        field = self.field
+        field = self.field1
         # without field param
         with self.assertRaises(AttributeError):
             self.Query_test_object.get_percentiles()
@@ -144,7 +201,7 @@ class TestNewFunctions(unittest.TestCase):
         Test the terms aggregation
         """
 
-        field = self.field
+        field = self.field1
         # without field param
         with self.assertRaises(AttributeError):
             self.Query_test_object.get_terms()
@@ -161,7 +218,7 @@ class TestNewFunctions(unittest.TestCase):
         Test the min aggregation
         """
 
-        field = self.field
+        field = self.field1
         # without field param
         with self.assertRaises(AttributeError):
             self.Query_test_object.get_min()
@@ -178,7 +235,7 @@ class TestNewFunctions(unittest.TestCase):
         Test the max aggregation
         """
 
-        field = self.field
+        field = self.field1
         # without field param
         with self.assertRaises(AttributeError):
             self.Query_test_object.get_max()
@@ -195,7 +252,7 @@ class TestNewFunctions(unittest.TestCase):
         Test the cardniality(count) aggregation
         """
 
-        field = self.field
+        field = self.field1
         # without field param
         with self.assertRaises(AttributeError):
             self.Query_test_object.get_cardinality()
@@ -212,7 +269,7 @@ class TestNewFunctions(unittest.TestCase):
         Test the extended statistics aggregation
         """
 
-        field = self.field
+        field = self.field1
         # without field param
         with self.assertRaises(AttributeError):
             self.Query_test_object.get_extended_stats()
@@ -223,12 +280,6 @@ class TestNewFunctions(unittest.TestCase):
         agg_name, agg = self.Query_test_object.aggregations.popitem()
         self.assertEqual('extended_stats_' + field, agg_name)
         self.assertEqual(agg, test_agg)
-
-    def test_multiple_aggregations(self):
-        """
-        Test when multiple aggrgations are being added
-        """
-        field = self.field
 
     def test_since(self):
         """
@@ -251,8 +302,8 @@ class TestNewFunctions(unittest.TestCase):
         Since the since and until functions can be for different fields, test them together
         """
 
-        self.Query_test_object.since(start=self.start, field="closed_at")
-        self.Query_test_object.until(end=self.end, field="closed_at")
+        self.Query_test_object.since(start=self.start, field="closed_at")\
+                              .until(end=self.end, field="closed_at")
         test_dict = {'gte': self.start.isoformat(), 'lte': self.end.isoformat()}
         self.assertDictEqual(self.Query_test_object.range['closed_at'], test_dict)
 
@@ -261,9 +312,11 @@ class TestNewFunctions(unittest.TestCase):
         Test nested aggregation wrt authors
         """
 
-        test_agg = A("terms", field="author_uuid", missing="others", size=self.size)
-        test_agg.metric(0, "cardinality", field="id_in_repo", precision_threshold=self.precision_threshold)
-        self.Query_test_object.get_cardinality("id_in_repo").by_authors("author_uuid")
+        test_agg = A("terms", field="author_name", missing="others", size=self.size)
+        test_agg.metric(0, "cardinality", field="hash", precision_threshold=self.precision_threshold)
+
+        self.Query_test_object.get_cardinality("hash")\
+                              .by_authors("author_name")
         agg_name, agg = self.Query_test_object.aggregations.popitem()
 
         self.assertEqual(agg, test_agg, msg='\n{0}\n{1}'.format(agg, test_agg))
@@ -274,9 +327,11 @@ class TestNewFunctions(unittest.TestCase):
         Test nested aggregation wrt author organizations
         """
 
-        test_agg = A("terms", field="author_org_name", missing="others", size=self.size)
-        test_agg.metric(0, "cardinality", field="id_in_repo", precision_threshold=self.precision_threshold)
-        self.Query_test_object.get_cardinality("id_in_repo").by_organizations("author_org_name")
+        test_agg = A("terms", field="author_domain", missing="others", size=self.size)
+        test_agg.metric(0, "cardinality", field="hash", precision_threshold=self.precision_threshold)
+
+        self.Query_test_object.get_cardinality("hash")\
+                              .by_organizations("author_domain")
         agg_name, agg = self.Query_test_object.aggregations.popitem()
 
         self.assertEqual(agg, test_agg, msg='\n{0}\n{1}'.format(agg, test_agg))
@@ -288,8 +343,10 @@ class TestNewFunctions(unittest.TestCase):
 
         test_agg = A("date_histogram", field="grimoire_creation_date", interval="month", time_zone="UTC",
                      min_doc_count=0, **{})
-        test_agg.metric(0, "cardinality", field=self.field, precision_threshold=self.precision_threshold)
-        self.Query_test_object.get_cardinality(self.field).by_period()
+        test_agg.metric(0, "cardinality", field=self.field1, precision_threshold=self.precision_threshold)
+
+        self.Query_test_object.get_cardinality(self.field1)\
+                              .by_period()
         agg_name, agg = self.Query_test_object.aggregations.popitem()
 
         self.assertEqual(agg, test_agg, msg='\n{0}\n{1}'.format(agg, test_agg))
@@ -309,30 +366,102 @@ class TestNewFunctions(unittest.TestCase):
 
         test_agg = A("date_histogram", field="created_at", interval="week", time_zone="UTC",
                      min_doc_count=0, **bounds_dict)
-        test_agg.metric(0, "cardinality", field=self.field, precision_threshold=self.precision_threshold)
-        self.Query_test_object.since(self.start).until(self.end)
-        self.Query_test_object.get_cardinality(self.field).by_period(field="created_at", period="week")
+        test_agg.metric(0, "cardinality", field=self.field1, precision_threshold=self.precision_threshold)
+
+        self.Query_test_object.since(self.start)\
+                              .until(self.end)\
+                              .get_cardinality(self.field1)\
+                              .by_period(field="created_at", period="week")
+
         agg_name, agg = self.Query_test_object.aggregations.popitem()
 
         self.assertEqual(agg, test_agg, msg='\n{0}\n{1}'.format(agg, test_agg))
 
+    def test_multiple_aggregations(self):
+        """
+        Test if multiple aggregations can be added
+        Choosing any 3 aggregations, randomly
+        """
+
+        self.Query_test_object.get_cardinality(self.field1)\
+                              .get_sum(self.field2)\
+                              .get_terms(self.field3)
+
+        aggregations = [A("cardinality", field=self.field1, precision_threshold=3000),
+                        A("sum", field=self.field2),
+                        A("terms", field=self.field3, order={'_count': 'desc'}, size=10000)]
+
+        for test_agg in aggregations[::-1]:
+            agg_name, agg = self.Query_test_object.aggregations.popitem()
+            self.assertEqual(agg, test_agg)
+
+    def test_nested_aggregations(self):
+        """
+        Tested 3 level nested aggregation
+        """
+
+        self.Query_test_object.get_cardinality(self.field1)\
+                              .by_authors()\
+                              .by_period(period="quarter")
+
+        period_agg = A("date_histogram", field="grimoire_creation_date",
+                       interval="quarter", time_zone="UTC",
+                       min_doc_count=0, **{})
+
+        author_agg = A("terms", field="author_uuid", missing="others", size=self.size)
+
+        author_agg.metric(0, "cardinality",
+                          field=self.field1,
+                          precision_threshold=self.precision_threshold)
+        period_agg.metric(0, author_agg)
+
+        agg_name, agg = self.Query_test_object.aggregations.popitem()
+        self.assertEqual(agg, period_agg)
+
     def test_fetch_aggregation_results(self):
-        pass
+        """
+        Test the fetched aggregation data
+        """
+
+        self.Query_test_object.until(end=self.end)\
+                              .get_cardinality("hash")\
+                              .by_authors(field="author_name")
+        response = self.Query_test_object.fetch_aggregation_results()
+        aggregations = {"aggregations": response['aggregations']}
+        actual_response = load_json_file(FETCH_AGGREGATION_RESULTS_DATA1)
+
+        self.assertDictEqual(aggregations, actual_response)
 
     def test_fetch_results_from_source(self):
-        pass
+        """
+        Testing if specific fields can be fetched from index
+        """
 
-    def test_get_ts(self):
-        pass
+        self.Query_test_object.until(end=self.end)
+        response = self.Query_test_object.fetch_results_from_source("author_name")
+        actual_response = load_json_file(FETCH_SOURCE_RESULTS_DATA1)
+        self.assertEqual(response, actual_response['hits'])
 
     def test_get_aggs(self):
-        pass
+        """
+        Testing single valued aggregations
+        """
 
-    def test_get_trend(self):
-        pass
+        self.Query_test_object.until(end=self.end)
+        self.Query_test_object.get_cardinality("hash")
+        num_commits = get_aggs(self.Query_test_object)
+        self.assertEqual(NUM_COMMITS, num_commits)
 
-    def test_calculate_bmi(self):
-        pass
+        self.Query_test_object.until(end=self.end)
+        self.Query_test_object.get_cardinality("author_name")
+        num_authors = get_aggs(self.Query_test_object)
+        self.assertEqual(NUM_AUTHORS, num_authors)
 
-    def test_buckets_to_df(self):
-        pass
+    @classmethod
+    def tearDownClass(cls):
+        """
+        Deleting the indices that were created for the tests
+        """
+
+        cls.es.indices.delete(index=GIT_ENRICH_INDEX)
+        cls.es.indices.delete(index=GIT_RAW_INDEX)

@@ -270,7 +270,7 @@ class Query():
         date_dict = {"gte": "{}".format(self.start_date.isoformat())}
 
         if field in self.range.keys():
-            self.range[field].update(date_dict)
+            self.range[field]["gte"] = date_dict["gte"]
         else:
             self.range[field] = date_dict
         return self
@@ -292,7 +292,7 @@ class Query():
         date_dict = {"lte": "{}".format(self.end_date.isoformat())}
 
         if field in self.range.keys():
-            self.range[field].update(date_dict)
+            self.range[field]["lte"] = date_dict["lte"]
         else:
             self.range[field] = date_dict
         return self
