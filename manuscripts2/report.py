@@ -142,7 +142,7 @@ class Report():
         csv = "metricsnames, netvalues, relativevalues, datasource\n"
 
         for metric in metrics:
-            (last, percentage) = get_trend(metric.get_timeseries())
+            (last, percentage) = get_trend(metric.get_metric())
             csv += "{}, {}, {}, {}\n".format(metric.index.index_name, last,
                                              percentage, metric.index.index_name)
 

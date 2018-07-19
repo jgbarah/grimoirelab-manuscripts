@@ -22,9 +22,6 @@
 #   Pranjal Aswani <aswani.pranjal@gmail.com>
 #
 
-import sys
-sys.path.insert(0, '..')
-
 from manuscripts2.elasticsearch import Query
 
 
@@ -32,15 +29,18 @@ class GitMetrics():
 
     def __init__(self, index):
 
-        self.name = "git"
         self.commits = Query(index)
+        self.index = index
+
+    def get_metric(self):
+        raise(NotImplementedError)
 
     def get_section_metrics(self):
 
         return {
             "overview": {
-                "activity_metrics": [self.commits.get_cardinality("hash").by_period()],
-                "author_metrics": [],
+                "activity_metrics": [Commits(self.index)],
+                "author_metrics": [Authors(self.index)],
                 "bmi_metrics": [],
                 "time_to_close_metrics": [],
                 "projects_metrics": []
@@ -67,3 +67,27 @@ class GitMetrics():
                 "patchsets_metrics": []
             }
         }
+
+class Commits(GitMetrics):
+
+    def __init__(self, index):
+        super(Commits, self).__init__(index)
+        self.id = "commits"
+        self.name = "Commits"
+        self.desc = "Changes to the source code"
+        self.commits.get_cardinality("hash").by_period()
+
+    def get_metric(self):
+        return self.commits.get_timeseries()
+
+class Authors(GitMetrics):
+
+    def __init__(self, index):
+        super(Authors, self).__init__(index)
+        self.id = "authors"
+        self.name = "Authors"
+        self.desc = "People authoring commits (changes to source code)"
+        self.commits.get_cardinality("author_uuid").by_period()
+
+    def get_metric(self):
+        return self.commits.get_timeseries()

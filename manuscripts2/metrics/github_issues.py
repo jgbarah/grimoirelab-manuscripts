@@ -22,9 +22,6 @@
 #   Pranjal Aswani <aswani.pranjal@gmail.com>
 #
 
-import sys
-sys.path.insert(0, '..')
-
 from manuscripts2.elasticsearch import Issues
 
 
@@ -32,17 +29,16 @@ class IssuesMetrics():
 
     def __init__(self, index):
 
-        self.name = "github_issues"
-        self.opened_issues = Issues(index)
-        self.closed_issues = Issues(index)
-        self.closed_issues.is_closed()
+        self.index = index
+
+    def get_metric(self):
+        raise(NotImplementedError)
 
     def get_section_metrics(self):
 
         return {
             "overview": {
-                "activity_metrics": [self.opened_issues.get_cardinality("id").by_period(),
-                                     self.closed_issues.get_cardinality("id").by_period()],
+                "activity_metrics": [OpenIssues(self.index), ClosedIssues(self.index)],
                 "author_metrics": [],
                 "bmi_metrics": [],
                 "time_to_close_metrics": [],
@@ -69,3 +65,29 @@ class IssuesMetrics():
                 "patchsets_metrics": []
             }
         }
+
+class OpenIssues(IssuesMetrics):
+
+    def __init__(self, index):
+        super(OpenIssues, self).__init__(index)
+        self.id = "opened"
+        self.name = "Opened tickets"
+        self.desc = "Number of opened tickets"
+        self.open_issues = Issues(index)
+        self.open_issues.get_cardinality("id").by_period()
+
+    def get_metric(self):
+        return self.open_issues.get_timeseries()
+
+class ClosedIssues(IssuesMetrics):
+
+    def __init__(self, index):
+        super(ClosedIssues, self).__init__(index)
+        self.id = "closed"
+        self.name = "Closed tickets"
+        self.desc = "Number of closed tickets"
+        self.closed_issues = Issues(index).is_closed()
+        self.closed_issues.get_cardinality("id").by_period()
+
+    def get_metric(self):
+        return self.closed_issues.get_timeseries()
