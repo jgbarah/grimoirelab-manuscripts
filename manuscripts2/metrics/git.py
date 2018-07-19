@@ -25,69 +25,75 @@
 from manuscripts2.elasticsearch import Query
 
 
-class GitMetrics():
+class GitMetric():
+    """Root of all metric classes based on queries to a git enriched index.
 
+    This class is not intended to be instantiated, but to be
+    extened by child classes that will populate self.query with real
+    queries.
+
+    :param index: index object
+    """
+    
     def __init__(self, index):
 
-        self.commits = Query(index)
-        self.index = index
+        self.query = Query(index)
 
-    def get_metric(self):
-        raise(NotImplementedError)
+    def timeseries(self):
+        """Obtain a time series from the current query"""
+        
+        return self.query.get_timeseries()
 
-    def get_section_metrics(self):
 
-        return {
-            "overview": {
-                "activity_metrics": [Commits(self.index)],
-                "author_metrics": [Authors(self.index)],
-                "bmi_metrics": [],
-                "time_to_close_metrics": [],
-                "projects_metrics": []
-            },
-            "com_channels": {
-                "activity_metrics": [],
-                "author_metrics": []
-            },
-            "project_activity": {
-                # TODO: Authors is not activity but we need two metrics here
-                "metrics": []
-            },
-            "project_community": {
-                "author_metrics": [],
-                "people_top_metrics": [],
-                "orgs_top_metrics": [],
-            },
-            "project_process": {
-                "bmi_metrics": [],
-                "time_to_close_metrics": [],
-                "time_to_close_title": "",
-                "time_to_close_review_metrics": [],
-                "time_to_close_review_title": "",
-                "patchsets_metrics": []
-            }
-        }
+class Commits(GitMetric):
+    """Class for computing the "commits" metric.
 
-class Commits(GitMetrics):
-
+    :param index: index object
+    """
+    
     def __init__(self, index):
-        super(Commits, self).__init__(index)
+        super().__init__(index)
         self.id = "commits"
         self.name = "Commits"
         self.desc = "Changes to the source code"
-        self.commits.get_cardinality("hash").by_period()
+        self.query = self.query.get_cardinality("hash").by_period()
 
-    def get_metric(self):
-        return self.commits.get_timeseries()
 
-class Authors(GitMetrics):
+class Authors(GitMetric):
+    """Class for computing the "authors" metric.
+
+    :param index: index object
+    """
 
     def __init__(self, index):
-        super(Authors, self).__init__(index)
+        super().__init__(index)
         self.id = "authors"
         self.name = "Authors"
         self.desc = "People authoring commits (changes to source code)"
-        self.commits.get_cardinality("author_uuid").by_period()
+        self.query = self.query.get_cardinality("author_uuid").by_period()
 
-    def get_metric(self):
-        return self.commits.get_timeseries()
+
+def overview(index):
+    """Compute metrics in the overview section for enriched git indexes.
+
+    Returns a dictionary. Each key in the dictionary is the name of
+    a metric, the value is the value of that metric. Value can be
+    a complex object (eg, a time series).
+
+    :return: dictionary with the value of the metrics
+    """
+    
+    results = {
+        "activity": Commits(index).timeseries(),
+        "author": Authors(index).timeseries(),
+    }
+    return results
+
+def project_community(index):
+    """Compute metrics in the project community section for enriched git indexes.
+    ...
+    """
+
+    results = {
+        ...
+    }
